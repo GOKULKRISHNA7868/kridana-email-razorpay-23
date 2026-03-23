@@ -21,10 +21,9 @@ import {
 } from "firebase/firestore";
 import { db, auth } from "../../firebase";
 import { useSelectedStudent } from "../../context/SelectedStudentContext";
-
+import { Tooltip } from "recharts";
 /* ---------------- Donut Component ---------------- */
-
-const Donut = ({ data }) => {
+const Donut = ({ data, observations }) => {
   return (
     <PieChart width={180} height={180}>
       <Pie
@@ -32,18 +31,56 @@ const Donut = ({ data }) => {
         innerRadius={70}
         outerRadius={90}
         dataKey="value"
+        nameKey="name"
         paddingAngle={2}
       >
         {data.map((entry, index) => (
-          <Cell key={`cell-${index}`} fill={entry.color} />
+          <Cell key={index} fill={entry.color} />
         ))}
       </Pie>
+
+      <Tooltip content={<CustomTooltip observations={observations} />} />
     </PieChart>
   );
 };
 
-/* ---------------- Dashboard ---------------- */
+{
+  /* 🔥 TOOLTIP */
+}
 
+/* ---------------- Dashboard ---------------- */
+const CustomTooltip = ({ active, payload }) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+
+    return (
+      <div className="bg-white p-2 border rounded shadow text-sm">
+        <p className="font-semibold capitalize">{data.name}</p>
+        <p>
+          {data.observation}/{data.fullValue}
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
+
+const CustomPhysicalTooltip = ({ active, payload }) => {
+  if (active && payload && payload.length) {
+    const item = payload[0];
+    const data = item.payload;
+
+    return (
+      <div className="bg-white p-2 border rounded shadow text-sm">
+        <p className="font-semibold">{data.name.toUpperCase()}</p>
+        <p>
+          {data.observation}/{data.value}
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
 const Dashboard = () => {
   const [attendanceData, setAttendanceData] = useState([]);
   const [trainingMetrics, setTrainingMetrics] = useState(null);
@@ -53,9 +90,9 @@ const Dashboard = () => {
   const [events, setEvents] = useState([]);
   const [role, setRole] = useState("student");
   const { selectedStudentUid } = useSelectedStudent();
-
+  const [trainingObservations, setTrainingObservations] = useState(null);
   console.log("Current Student:", selectedStudentUid);
-
+  const [metricObservations, setMetricObservations] = useState(null);
   /* ---------------- FETCH DATA ---------------- */
 
   useEffect(() => {
@@ -167,22 +204,31 @@ const Dashboard = () => {
         console.log("QUERY DEBUG:");
         console.log("Institute:", instituteId);
         console.log("Student:", selectedStudentUid || user.uid);
-        const docRef = doc(
-          db,
-          `institutes/${instituteId}/performancestudents/pkDvoFsJOGROkXx7ojLB`,
+        const q = query(
+          collection(db, `institutes/${instituteId}/performancestudents`),
+          where("studentId", "==", targetStudentId),
         );
 
-        const snap = await getDoc(docRef);
+        const snap = await getDocs(q);
 
-        if (!snap.exists()) {
-          console.log("No data ❌");
+        if (snap.empty) {
+          console.log("No data for this student ❌");
+
+          setAttendanceData([]);
+          setTrainingMetrics(null);
+          setPhysicalMetrics(null);
           setLoading(false);
           return;
         }
 
-        const docData = snap.data();
+        // ✅ Always pick latest record
+        const latestDoc = snap.docs.sort(
+          (a, b) => b.data().createdAt?.seconds - a.data().createdAt?.seconds,
+        )[0];
 
-        console.log("CORRECT DOC ✅", docData);
+        const docData = latestDoc.data();
+
+        console.log("FOUND DATA ✅", docData);
 
         if (snap.empty) {
           console.log("No documents found ❌");
@@ -191,38 +237,22 @@ const Dashboard = () => {
         }
 
         const attendanceResult = [];
-
-        /* ✅ Attendance */
-        if (docData.categories) {
-          docData.categories.forEach((cat) => {
-            (cat.subCategories || []).forEach((sub) => {
-              if (sub.attendance) {
-                attendanceResult.push({
-                  title: cat.category || "Sessions",
-                  total: sub.attendance.totalClasses || 0,
-                  present: sub.attendance.presentClasses || 0,
-                  absent:
-                    (sub.attendance.totalClasses || 0) -
-                    (sub.attendance.presentClasses || 0),
-                });
-              }
-            });
-          });
-        }
-
-        /* ✅ Training */
         let training = null;
         let physical = null;
+        let observations = null;
 
         if (docData.categories) {
           docData.categories.forEach((cat) => {
             (cat.subCategories || []).forEach((sub) => {
-              // ✅ CHECK HERE
-              if (sub.metrics) {
+              if (sub.metrics && !training) {
                 training = sub.metrics;
               }
 
-              if (sub.physicalFitness) {
+              if (sub.metricObservations && !observations) {
+                observations = sub.metricObservations;
+              }
+
+              if (sub.physicalFitness && !physical) {
                 physical = sub.physicalFitness;
               }
             });
@@ -233,8 +263,9 @@ const Dashboard = () => {
 
         /* ✅ SET STATE */
         setAttendanceData(attendanceResult);
-        setTrainingMetrics(training ? { ...training } : null);
-        setPhysicalMetrics(physical ? { ...physical } : null);
+        setTrainingMetrics(training);
+        setPhysicalMetrics(physical);
+        setMetricObservations(observations);
         setLoading(false);
       } catch (err) {
         console.error("Dashboard fetch error:", err);
@@ -250,7 +281,13 @@ const Dashboard = () => {
   }, [selectedStudentUid]);
 
   /* ---------------- Helpers ---------------- */
-
+  useEffect(() => {
+    // 🔥 HARD RESET when student changes
+    setAttendanceData([]);
+    setTrainingMetrics(null);
+    setPhysicalMetrics(null);
+    setEvents([]);
+  }, [selectedStudentUid]);
   const parseScore = (val) => {
     if (!val) return 0;
     if (typeof val === "string" && val.includes("/")) {
@@ -320,34 +357,74 @@ const Dashboard = () => {
             <div className="flex flex-col lg:flex-row justify-around items-center gap-10">
               {/* Left Donut */}
               <div className="flex flex-col items-center">
-                <Donut
-                  data={[
-                    {
-                      value: parseScore(trainingMetrics?.coach || 0),
-                      color: "#f97316",
-                    },
-                    {
-                      value: parseScore(trainingMetrics?.skill || 0),
-                      color: "#eab308",
-                    },
-                    {
-                      value: parseScore(trainingMetrics?.fitness || 0),
-                      color: "#22c55e",
-                    },
-                    {
-                      value: parseScore(trainingMetrics?.discipline || 0),
-                      color: "#6b7280",
-                    },
-                    {
-                      value: parseScore(trainingMetrics?.team || 0),
-                      color: "#3b82f6",
-                    },
-                    {
-                      value: parseScore(trainingMetrics?.focus || 0),
-                      color: "#ef4444",
-                    },
-                  ]}
-                />
+                {trainingMetrics ? (
+                  <Donut
+                    data={[
+                      {
+                        name: "coach",
+                        value:
+                          (parseScore(metricObservations?.coach) /
+                            parseScore(trainingMetrics?.coach || 10)) *
+                          10,
+                        fullValue: parseScore(trainingMetrics?.coach),
+                        observation: parseScore(metricObservations?.coach),
+                        color: "#f97316",
+                      },
+                      {
+                        name: "skill",
+                        value:
+                          (parseScore(metricObservations?.skill) /
+                            parseScore(trainingMetrics?.skill || 10)) *
+                          10,
+                        fullValue: parseScore(trainingMetrics?.skill),
+                        observation: parseScore(metricObservations?.skill),
+                        color: "#eab308",
+                      },
+                      {
+                        name: "fitness",
+                        value:
+                          (parseScore(metricObservations?.fitness) /
+                            parseScore(trainingMetrics?.fitness || 10)) *
+                          10,
+                        fullValue: parseScore(trainingMetrics?.fitness),
+                        observation: parseScore(metricObservations?.fitness),
+                        color: "#22c55e",
+                      },
+                      {
+                        name: "discipline",
+                        value:
+                          (parseScore(metricObservations?.discipline) /
+                            parseScore(trainingMetrics?.discipline || 10)) *
+                          10,
+                        fullValue: parseScore(trainingMetrics?.discipline),
+                        observation: parseScore(metricObservations?.discipline),
+                        color: "#6b7280",
+                      },
+                      {
+                        name: "team",
+                        value:
+                          (parseScore(metricObservations?.team) /
+                            parseScore(trainingMetrics?.team || 10)) *
+                          10,
+                        fullValue: parseScore(trainingMetrics?.team),
+                        observation: parseScore(metricObservations?.team),
+                        color: "#3b82f6",
+                      },
+                      {
+                        name: "focus",
+                        value:
+                          (parseScore(metricObservations?.focus) /
+                            parseScore(trainingMetrics?.focus || 10)) *
+                          10,
+                        fullValue: parseScore(trainingMetrics?.focus),
+                        observation: parseScore(metricObservations?.focus),
+                        color: "#ef4444",
+                      },
+                    ]}
+                  />
+                ) : (
+                  <p className="text-gray-400 mt-6">No training data</p>
+                )}
 
                 <div className="grid grid-cols-2 gap-3 mt-4 text-sm">
                   <p>
@@ -379,30 +456,82 @@ const Dashboard = () => {
 
               {/* Right Donut */}
               <div className="flex flex-col items-center">
-                <Donut
-                  data={[
-                    {
-                      value: parseScore(physicalMetrics?.speed?.value),
-                      color: "#f97316",
-                    },
-                    {
-                      value: parseScore(physicalMetrics?.agility?.value),
-                      color: "#eab308",
-                    },
-                    {
-                      value: parseScore(physicalMetrics?.stamina?.value),
-                      color: "#22c55e",
-                    },
-                    {
-                      value: parseScore(physicalMetrics?.flexibility?.value),
-                      color: "#3b82f6",
-                    },
-                    {
-                      value: parseScore(physicalMetrics?.strength?.value),
-                      color: "#10b981",
-                    },
-                  ]}
-                />
+                {physicalMetrics ? (
+                  <Donut
+                    data={[
+                      {
+                        name: "speed",
+                        value:
+                          (parseScore(physicalMetrics?.speed?.observation) /
+                            parseScore(physicalMetrics?.speed?.value || 10)) *
+                          10,
+                        observation: parseScore(
+                          physicalMetrics?.speed?.observation,
+                        ),
+                        fullValue: parseScore(physicalMetrics?.speed?.value),
+                        color: "#f97316",
+                      },
+                      {
+                        name: "agility",
+                        value:
+                          (parseScore(physicalMetrics?.agility?.observation) /
+                            parseScore(physicalMetrics?.agility?.value || 10)) *
+                          10,
+                        observation: parseScore(
+                          physicalMetrics?.agility?.observation,
+                        ),
+                        fullValue: parseScore(physicalMetrics?.agility?.value),
+                        color: "#eab308",
+                      },
+                      {
+                        name: "stamina",
+                        value:
+                          (parseScore(physicalMetrics?.stamina?.observation) /
+                            parseScore(physicalMetrics?.stamina?.value || 10)) *
+                          10,
+                        observation: parseScore(
+                          physicalMetrics?.stamina?.observation,
+                        ),
+                        fullValue: parseScore(physicalMetrics?.stamina?.value),
+                        color: "#22c55e",
+                      },
+                      {
+                        name: "flexibility",
+                        value:
+                          (parseScore(
+                            physicalMetrics?.flexibility?.observation,
+                          ) /
+                            parseScore(
+                              physicalMetrics?.flexibility?.value || 10,
+                            )) *
+                          10,
+                        observation: parseScore(
+                          physicalMetrics?.flexibility?.observation,
+                        ),
+                        fullValue: parseScore(
+                          physicalMetrics?.flexibility?.value,
+                        ),
+                        color: "#3b82f6",
+                      },
+                      {
+                        name: "strength",
+                        value:
+                          (parseScore(physicalMetrics?.strength?.observation) /
+                            parseScore(
+                              physicalMetrics?.strength?.value || 10,
+                            )) *
+                          10,
+                        observation: parseScore(
+                          physicalMetrics?.strength?.observation,
+                        ),
+                        fullValue: parseScore(physicalMetrics?.strength?.value),
+                        color: "#10b981",
+                      },
+                    ]}
+                  />
+                ) : (
+                  <p className="text-gray-400 mt-6">No physical data</p>
+                )}
 
                 <div className="grid grid-cols-2 gap-3 mt-4 text-sm">
                   <p>
