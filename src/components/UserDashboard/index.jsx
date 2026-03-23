@@ -12,6 +12,7 @@ import {
   onSnapshot,
   doc,
   getDoc,
+  getDocs,
   updateDoc,
   serverTimestamp,
 } from "firebase/firestore";
@@ -99,9 +100,71 @@ const UserDashboard = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showDeletedSuccess, setShowDeletedSuccess] = useState(false);
   const [familyStudentDetails, setFamilyStudentDetails] = useState([]);
+  const [selectedStudentRole, setSelectedStudentRole] = useState(null);
   /* ============================= 
      AUTO LOGOUT (5 MIN)
   ============================= */
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const fetchSameEmailStudents = async () => {
+      try {
+        const baseUid = user.uid.split("_")[0];
+
+        const studentSnap = await getDocs(collection(db, "students"));
+        const trainerStudentSnap = await getDocs(
+          collection(db, "trainerstudents"),
+        );
+
+        // 🔥 MERGE BOTH COLLECTIONS
+        const allUsers = [
+          ...studentSnap.docs.map((doc) => ({ uid: doc.id, ...doc.data() })),
+          ...trainerStudentSnap.docs.map((doc) => ({
+            uid: doc.id,
+            ...doc.data(),
+          })),
+        ];
+
+        // 🔥 FILTER SAME FAMILY (UID BASE)
+        const matched = allUsers.filter((item) => item.uid.startsWith(baseUid));
+
+        // 🔥 FETCH INSTITUTE NAMES
+        const finalList = await Promise.all(
+          matched.map(async (s) => {
+            let instituteName = "";
+
+            if (s.instituteId) {
+              const instSnap = await getDoc(
+                doc(db, "institutes", s.instituteId),
+              );
+
+              if (instSnap.exists()) {
+                instituteName = instSnap.data().instituteName || "";
+              }
+            }
+
+            return {
+              uid: s.uid,
+              name: `${s.firstName} ${s.lastName}${
+                instituteName ? ` (${instituteName})` : ""
+              }`,
+            };
+          }),
+        );
+
+        setFamilyStudentDetails(finalList);
+
+        // ✅ AUTO SELECT FIRST
+        if (finalList.length > 0) {
+          setSelectedStudentUid(finalList[0].uid);
+        }
+      } catch (err) {
+        console.error("Sibling fetch error:", err);
+      }
+    };
+
+    fetchSameEmailStudents();
+  }, [user]);
   useEffect(() => {
     const resetTimer = () => {
       if (idleTimer.current) clearTimeout(idleTimer.current);
@@ -234,20 +297,32 @@ const UserDashboard = () => {
       const list = [];
 
       for (let uid of familyStudents) {
-        // 1️⃣ Check institute students
         let snap = await getDoc(doc(db, "students", uid));
 
         if (!snap.exists()) {
-          // 2️⃣ If not found, check trainer students
           snap = await getDoc(doc(db, "trainerstudents", uid));
         }
 
         if (snap.exists()) {
           const data = snap.data();
 
+          let instituteName = "";
+
+          if (data.instituteId) {
+            const instSnap = await getDoc(
+              doc(db, "institutes", data.instituteId),
+            );
+
+            if (instSnap.exists()) {
+              instituteName = instSnap.data().instituteName || "";
+            }
+          }
+
           list.push({
             uid,
-            name: `${data.firstName || ""} ${data.lastName || ""}`,
+            name: `${data.firstName || ""} ${data.lastName || ""}${
+              instituteName ? ` (${instituteName})` : ""
+            }`,
           });
         }
       }
@@ -321,15 +396,57 @@ const UserDashboard = () => {
   /* ============================= 
      SIDEBAR ITEMS BASED ON ROLE
   ============================= */
-  const sidebarItems =
-    role === "student" || role === "family"
-      ? studentSidebarItems
-      : role === "trainer"
-        ? trainerSidebarItems
-        : role === "trainerstudent"
-          ? trainerStudentSidebarItems
-          : otherUserSidebarItems;
+  /* ============================= 
+   SIDEBAR ITEMS BASED ON ROLE
+============================= */
+  /* ============================= 
+   EFFECTIVE ROLE BASED ON SELECTED STUDENT
+============================= */
+  const [effectiveRole, setEffectiveRole] = useState(role);
 
+  useEffect(() => {
+    if (!selectedStudentUid) return;
+
+    const checkSelectedStudentRole = async () => {
+      try {
+        const studentSnap = await getDoc(
+          doc(db, "students", selectedStudentUid),
+        );
+        if (studentSnap.exists()) {
+          setSelectedStudentRole("student");
+          return;
+        }
+
+        const trainerStudentSnap = await getDoc(
+          doc(db, "trainerstudents", selectedStudentUid),
+        );
+        if (trainerStudentSnap.exists()) {
+          setSelectedStudentRole("trainerstudent");
+          return;
+        }
+
+        // fallback
+        setSelectedStudentRole(null);
+      } catch (err) {
+        console.error("Error checking selected student role:", err);
+        setSelectedStudentRole(null);
+      }
+    };
+
+    checkSelectedStudentRole();
+  }, [selectedStudentUid]);
+
+  /* ============================= 
+   SIDEBAR ITEMS BASED ON EFFECTIVE ROLE
+============================= */
+  const sidebarItems = React.useMemo(() => {
+    if (selectedStudentRole === "student") return studentSidebarItems;
+    if (selectedStudentRole === "trainerstudent")
+      return trainerStudentSidebarItems;
+    // fallback: logged-in user role
+    if (role === "trainer") return trainerSidebarItems;
+    return otherUserSidebarItems;
+  }, [selectedStudentRole, role]);
   /* ============================= 
      LOADING SCREEN
   ============================= */
@@ -411,8 +528,10 @@ const UserDashboard = () => {
         {/* FAMILY STUDENT SELECTION */}
         {/* FAMILY / TRAINER FAMILY STUDENT SELECTION */}
 
-        {(role === "family" || role === "trainerstudent") &&
-          familyStudents.length > 0 && (
+        {(role === "family" ||
+          role === "trainerstudent" ||
+          role === "student") &&
+          familyStudentDetails.length > 0 && (
             <div className="bg-black rounded-xl p-3 mb-3">
               <label className="block text-sm text-orange-400 font-semibold mb-1">
                 Select Student:

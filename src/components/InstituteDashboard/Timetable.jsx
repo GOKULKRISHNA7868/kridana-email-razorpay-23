@@ -208,8 +208,9 @@ export default function ClassTime() {
           <button
             key={mode}
             onClick={() => setViewMode(mode)}
-            className={`px-4 py-1 rounded ${viewMode === mode ? "bg-orange-500 text-white" : "bg-gray-200"
-              }`}
+            className={`px-4 py-1 rounded ${
+              viewMode === mode ? "bg-orange-500 text-white" : "bg-gray-200"
+            }`}
           >
             {mode.toUpperCase()}
           </button>
@@ -301,12 +302,9 @@ export default function ClassTime() {
 
             <input
               className="w-full border p-2 bg-transparent"
-              placeholder="Trainer Name"
-              value={form.trainerName}
-              onChange={(e) => {
-                const value = e.target.value.replace(/[^A-Za-z\s]/g, "");
-                setForm({ ...form, trainerName: value });
-              }}
+              placeholder="Category"
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
             />
 
             <select

@@ -427,16 +427,14 @@ const MyAccountPage = ({ setActiveMenu }) => {
   };
 
   // Capitalize each word (Ravi Kumar)
-const capitalizeWords = (value) => {
-  return value
-    .toLowerCase()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-};
+  const capitalizeWords = (value) => {
+    return value.toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
+  };
 
-// Allow only letters + space
-const onlyAlphabets = (value) => {
-  return value.replace(/[^A-Za-z\s]/g, "");
-};
+  // Allow only letters + space
+  const onlyAlphabets = (value) => {
+    return value.replace(/[^A-Za-z\s]/g, "");
+  };
 
   const handleTrainerImageChange = async (e) => {
     const file = e.target.files[0];
@@ -548,6 +546,7 @@ const onlyAlphabets = (value) => {
         phone: editingStudent.phone,
         address: editingStudent.address,
         age: editingStudent.age,
+        branch: editingStudent.branch,
         dateOfBirth: editingStudent.dateOfBirth,
         joiningDate: editingStudent.joiningDate,
         monthlyDate: editingStudent.monthlyDate,
@@ -1029,14 +1028,18 @@ const onlyAlphabets = (value) => {
                 {/* CONTACT */}
                 <div className="mt-3 text-sm text-black space-y-1">
                   <p className="flex items-center gap-2">
-  <img src="/email-icon.png" alt="email" className="w-4 h-4" />
-  {trainer.email || "—"}
-</p>
+                    <img
+                      src="/email-icon.png"
+                      alt="email"
+                      className="w-4 h-4"
+                    />
+                    {trainer.email || "—"}
+                  </p>
 
-<p className="flex items-center gap-2">
-  <img src="/call-icon.png" alt="phone" className="w-4 h-4" />
-  {trainer.phone}
-</p>
+                  <p className="flex items-center gap-2">
+                    <img src="/call-icon.png" alt="phone" className="w-4 h-4" />
+                    {trainer.phone}
+                  </p>
                 </div>
 
                 {/* DESCRIPTION */}
@@ -1048,7 +1051,7 @@ const onlyAlphabets = (value) => {
                 {trainer.achievements?.length > 0 && (
                   <div className="mt-3">
                     <p className="font-semibold text-sm flex items-center gap-2">
-                       Achievements ({trainer.achievements.length})
+                      Achievements ({trainer.achievements.length})
                     </p>
 
                     <ul className="ml-5 mt-1 list-disc text-sm text-gray-700">
@@ -1081,54 +1084,54 @@ const onlyAlphabets = (value) => {
                   Edit Management Details
                 </h2>
 
-<button
-  onClick={() => setShowEditModal(false)}   // ✅ FIXED
-  className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-gray-100 transition"
-  title="Close"
->
-  <span className="text-black text-lg font-light">✕</span>
-</button>
+                <button
+                  onClick={() => setShowEditModal(false)} // ✅ FIXED
+                  className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-gray-100 transition"
+                  title="Close"
+                >
+                  <span className="text-black text-lg font-light">✕</span>
+                </button>
               </div>
 
               {/* FORM */}
               <div className="p-6 max-h-[75vh] overflow-y-auto space-y-8">
-                                                  <div className="flex items-center gap-4 mb-4">
-                    {editingTrainer?.profileImageUrl ? (
-                      <img
-                        src={editingTrainer.profileImageUrl}
-                        className="w-20 h-20 rounded-lg object-cover border"
-                      />
-                    ) : (
-                      <div className="w-20 h-20 bg-gray-200 rounded-lg flex items-center justify-center">
-                        <User size={30} />
-                      </div>
-                    )}
-
-                    <div className="flex flex-col gap-1">
-                      <label className="cursor-pointer bg-orange-500 text-white px-3 py-1 rounded text-sm text-center">
-                        Change Photo
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={handleTrainerImageChange}
-                        />
-                      </label>
-
-                      {editingTrainer?.profileImageUrl && (
-                        <button
-                          onClick={removeTrainerImage}
-                          className="text-red-500 text-sm"
-                        >
-                          Remove
-                        </button>
-                      )}
+                <div className="flex items-center gap-4 mb-4">
+                  {editingTrainer?.profileImageUrl ? (
+                    <img
+                      src={editingTrainer.profileImageUrl}
+                      className="w-20 h-20 rounded-lg object-cover border"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 bg-gray-200 rounded-lg flex items-center justify-center">
+                      <User size={30} />
                     </div>
+                  )}
+
+                  <div className="flex flex-col gap-1">
+                    <label className="cursor-pointer bg-orange-500 text-white px-3 py-1 rounded text-sm text-center">
+                      Change Photo
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleTrainerImageChange}
+                      />
+                    </label>
+
+                    {editingTrainer?.profileImageUrl && (
+                      <button
+                        onClick={removeTrainerImage}
+                        className="text-red-500 text-sm"
+                      >
+                        Remove
+                      </button>
+                    )}
                   </div>
+                </div>
                 {/* ================= PERSONAL INFORMATION ================= */}
                 <div>
                   <h3 className="text-lg font-semibold text-orange-500 mb-4">
-                     Personal Information
+                    Personal Information
                   </h3>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1138,15 +1141,15 @@ const onlyAlphabets = (value) => {
                       </label>
                       <input
                         value={editingTrainer?.firstName || ""}
-onChange={(e) => {
-  let value = onlyAlphabets(e.target.value);
-  value = capitalizeWords(value);
+                        onChange={(e) => {
+                          let value = onlyAlphabets(e.target.value);
+                          value = capitalizeWords(value);
 
-  setEditingTrainer({
-    ...editingTrainer,
-    firstName: value,
-  });
-}}
+                          setEditingTrainer({
+                            ...editingTrainer,
+                            firstName: value,
+                          });
+                        }}
                         className="w-full border rounded-lg px-3 py-2 focus:outline-none"
                       />
                     </div>
@@ -1157,15 +1160,15 @@ onChange={(e) => {
                       </label>
                       <input
                         value={editingTrainer?.lastName || ""}
-onChange={(e) => {
-  let value = onlyAlphabets(e.target.value);
-  value = capitalizeWords(value);
+                        onChange={(e) => {
+                          let value = onlyAlphabets(e.target.value);
+                          value = capitalizeWords(value);
 
-  setEditingTrainer({
-    ...editingTrainer,
-    lastName: value,
-  });
-}}
+                          setEditingTrainer({
+                            ...editingTrainer,
+                            lastName: value,
+                          });
+                        }}
                         className="w-full border rounded-lg px-3 py-2 focus:outline-none"
                       />
                     </div>
@@ -1225,11 +1228,10 @@ onChange={(e) => {
                   </div>
                 </div>
 
-
                 {/* ================= PROFESSIONAL DETAILS ================= */}
                 <div>
                   <h3 className="text-lg font-semibold text-orange-500 mb-4">
-                     Professional Details
+                    Professional Details
                   </h3>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1239,15 +1241,15 @@ onChange={(e) => {
                       </label>
                       <input
                         value={editingTrainer?.designation || ""}
-onChange={(e) => {
-  let value = onlyAlphabets(e.target.value);
-  value = capitalizeWords(value);
+                        onChange={(e) => {
+                          let value = onlyAlphabets(e.target.value);
+                          value = capitalizeWords(value);
 
-  setEditingTrainer({
-    ...editingTrainer,
-    designation: value,
-  });
-}}
+                          setEditingTrainer({
+                            ...editingTrainer,
+                            designation: value,
+                          });
+                        }}
                         className="w-full border rounded-lg px-3 py-2 focus:outline-none"
                       />
                     </div>
@@ -1360,66 +1362,66 @@ onChange={(e) => {
                 {/* ================= BANK DETAILS ================= */}
                 <div>
                   <h3 className="text-lg font-semibold text-orange-500 mb-4">
-                     Bank Details
+                    Bank Details
                   </h3>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <input
                       placeholder="Account Name"
                       value={editingTrainer?.accountName || ""}
-onChange={(e) => {
-  let value = onlyAlphabets(e.target.value);
-  value = capitalizeWords(value);
+                      onChange={(e) => {
+                        let value = onlyAlphabets(e.target.value);
+                        value = capitalizeWords(value);
 
-  setEditingTrainer({
-    ...editingTrainer,
-    accountName: value,
-  });
-}}
+                        setEditingTrainer({
+                          ...editingTrainer,
+                          accountName: value,
+                        });
+                      }}
                       className="border rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-400"
                     />
 
                     <input
                       placeholder="Account Number"
                       value={editingTrainer?.accountNumber || ""}
- onChange={(e) => {
-  const value = e.target.value.replace(/\D/g, "");
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, "");
 
-  setEditingTrainer({
-    ...editingTrainer,
-    accountNumber: value,
-  });
-}}
+                        setEditingTrainer({
+                          ...editingTrainer,
+                          accountNumber: value,
+                        });
+                      }}
                       className="border rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-400"
                     />
 
                     <input
                       placeholder="Bank Name"
                       value={editingTrainer?.bankName || ""}
-onChange={(e) => {
-  let value = onlyAlphabets(e.target.value);
-  value = capitalizeWords(value);
+                      onChange={(e) => {
+                        let value = onlyAlphabets(e.target.value);
+                        value = capitalizeWords(value);
 
-  setEditingTrainer({
-    ...editingTrainer,
-    bankName: value,
-  });
-}}
+                        setEditingTrainer({
+                          ...editingTrainer,
+                          bankName: value,
+                        });
+                      }}
                       className="border rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-400"
                     />
 
                     <input
                       placeholder="IFSC Code"
                       value={editingTrainer?.ifscCode || ""}
-onChange={(e) => {
-  let value = e.target.value.replace(/[^A-Za-z0-9]/g, "");
-  value = value.toUpperCase();
+                      onChange={(e) => {
+                        let value = e.target.value.replace(/[^A-Za-z0-9]/g, "");
+                        value = value.toUpperCase();
 
-  setEditingTrainer({
-    ...editingTrainer,
-    ifscCode: value,
-  });
-}}
+                        setEditingTrainer({
+                          ...editingTrainer,
+                          ifscCode: value,
+                        });
+                      }}
                       className="border rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-400"
                     />
 
@@ -1452,9 +1454,8 @@ onChange={(e) => {
                 {/* ================= DOCUMENT PREVIEW ================= */}
                 <div>
                   <h3 className="text-lg font-semibold text-orange-500 mb-4">
-                     Uploaded Documents
+                    Uploaded Documents
                   </h3>
-
 
                   <div className="mb-4">
                     <p className="text-sm font-medium mb-2">
@@ -1471,27 +1472,28 @@ onChange={(e) => {
                           />
 
                           {/* Remove Button */}
-<button
-  type="button"
-  onClick={() => {
-    const updatedFiles = editingTrainer.aadharFiles.filter(
-      (_, index) => index !== i
-    );
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updatedFiles =
+                                editingTrainer.aadharFiles.filter(
+                                  (_, index) => index !== i,
+                                );
 
-    setEditingTrainer({
-      ...editingTrainer,
-      aadharFiles: updatedFiles,
-    });
-  }}
-  className="absolute -top-2 -right-2 w-6 h-6 flex items-center justify-center rounded-md 
+                              setEditingTrainer({
+                                ...editingTrainer,
+                                aadharFiles: updatedFiles,
+                              });
+                            }}
+                            className="absolute -top-2 -right-2 w-6 h-6 flex items-center justify-center rounded-md 
              hover:bg-gray-100 transition 
              focus:outline-none focus:ring-0 active:ring-0"
-  title="Remove"
->
-  <span className="text-gray-500 text-base font-light leading-none">
-    ✕
-  </span>
-</button>
+                            title="Remove"
+                          >
+                            <span className="text-gray-500 text-base font-light leading-none">
+                              ✕
+                            </span>
+                          </button>
                         </div>
                       ))}
 
@@ -1667,10 +1669,10 @@ onChange={(e) => {
 
               {/* SEARCH ICON */}
               <img
-  src="/search-icon.png"
-  alt="search"
- className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
-/>
+                src="/search-icon.png"
+                alt="search"
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
+              />
             </div>
 
             {/* FILTER BUTTONS */}
@@ -1914,18 +1916,18 @@ onChange={(e) => {
               <h2 className="text-xl font-semibold text-gray-800">
                 Edit Customer Details
               </h2>
-<button
-  type="button"
-  onClick={() => setShowEditStudentModal(false)}
-  className="w-8 h-8 flex items-center justify-center rounded-md 
+              <button
+                type="button"
+                onClick={() => setShowEditStudentModal(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-md 
              hover:bg-gray-100 transition 
              focus:outline-none focus:ring-0"
-  title="Close"
->
-  <span className="text-gray-500 text-lg font-light leading-none">
-    ✕
-  </span>
-</button>
+                title="Close"
+              >
+                <span className="text-gray-500 text-lg font-light leading-none">
+                  ✕
+                </span>
+              </button>
             </div>
 
             {/* BODY */}
@@ -1933,7 +1935,7 @@ onChange={(e) => {
               {/* ================= PERSONAL INFORMATION ================= */}
               <div>
                 <h3 className="text-lg font-semibold text-orange-500 mb-4">
-                   Personal Information
+                  Personal Information
                 </h3>
                 <div className="flex items-center gap-4 mb-4">
                   {editingStudent?.profileImageUrl ? (
@@ -1975,15 +1977,15 @@ onChange={(e) => {
                     </label>
                     <input
                       value={editingStudent?.firstName || ""}
-onChange={(e) => {
-  let value = onlyAlphabets(e.target.value);
-  value = capitalizeWords(value);
+                      onChange={(e) => {
+                        let value = onlyAlphabets(e.target.value);
+                        value = capitalizeWords(value);
 
-  setEditingStudent({
-    ...editingStudent,
-    firstName: value,
-  });
-}}
+                        setEditingStudent({
+                          ...editingStudent,
+                          firstName: value,
+                        });
+                      }}
                       className="w-full border rounded-lg px-3 py-2 focus:outline-none"
                     />
                   </div>
@@ -1994,15 +1996,15 @@ onChange={(e) => {
                     </label>
                     <input
                       value={editingStudent?.lastName || ""}
-onChange={(e) => {
-  let value = onlyAlphabets(e.target.value);
-  value = capitalizeWords(value);
+                      onChange={(e) => {
+                        let value = onlyAlphabets(e.target.value);
+                        value = capitalizeWords(value);
 
-  setEditingStudent({
-    ...editingStudent,
-    lastName: value,
-  });
-}}
+                        setEditingStudent({
+                          ...editingStudent,
+                          lastName: value,
+                        });
+                      }}
                       className="w-full border rounded-lg px-3 py-2 focus:outline-none"
                     />
                   </div>
@@ -2011,14 +2013,21 @@ onChange={(e) => {
                       Branch
                     </label>
                     <input
-                      type="number"
+                      type="text"
                       value={editingStudent?.branch || ""}
-                      onChange={(e) =>
+                      placeholder="Enter branch name or number"
+                      onChange={(e) => {
+                        const value = e.target.value.replace(
+                          /[^A-Za-z0-9\s-]/g,
+                          "",
+                        );
+                        // allows letters, numbers, space, dash
+
                         setEditingStudent({
                           ...editingStudent,
-                          branch: e.target.value,
-                        })
-                      }
+                          branch: value,
+                        });
+                      }}
                       className="w-full border rounded-lg px-3 py-2 focus:outline-none"
                     />
                   </div>
@@ -2061,7 +2070,7 @@ onChange={(e) => {
               {/* ================= CONTACT DETAILS ================= */}
               <div>
                 <h3 className="text-lg font-semibold text-orange-500 mb-4">
-                   Contact Details
+                  Contact Details
                 </h3>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2122,7 +2131,7 @@ onChange={(e) => {
               {/* ================= SPORTS INFORMATION ================= */}
               <div>
                 <h3 className="text-lg font-semibold text-orange-500 mb-4">
-                   Sports Information
+                  Sports Information
                 </h3>
                 {sports.map((sport, index) => (
                   <div
@@ -2196,18 +2205,18 @@ onChange={(e) => {
                       className="border rounded-lg px-3 py-2"
                     />
                     {/* Belt */}
-<input
-  value={sports[index]?.belt || ""}
-  onChange={(e) => {
-    const value = e.target.value.replace(/[^A-Za-z ]/g, "");
+                    <input
+                      value={sports[index]?.belt || ""}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/[^A-Za-z ]/g, "");
 
-    const updatedSports = [...sports];
-    updatedSports[index].belt = value;
+                        const updatedSports = [...sports];
+                        updatedSports[index].belt = value;
 
-    setSports(updatedSports);
-  }}
-  className="w-full border rounded-lg px-3 py-2"
-/>
+                        setSports(updatedSports);
+                      }}
+                      className="w-full border rounded-lg px-3 py-2"
+                    />
 
                     {/* Remove */}
                     <button
@@ -2230,7 +2239,7 @@ onChange={(e) => {
               {/* ================= TRAINING DETAILS ================= */}
               <div>
                 <h3 className="text-lg font-semibold text-orange-500 mb-4">
-                   Training Details
+                  Training Details
                 </h3>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

@@ -28,7 +28,15 @@ const MONTHS = [
 ];
 
 const FeesDetailsPage = () => {
-  const instituteId = auth.currentUser?.uid;
+  const [instituteId, setInstituteId] = useState(null);
+
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged((user) => {
+      if (user) setInstituteId(user.uid);
+    });
+
+    return () => unsub();
+  }, []);
 
   const currentYear = new Date().getFullYear();
 
@@ -117,9 +125,8 @@ const FeesDetailsPage = () => {
   const filteredRows = useMemo(() => {
     let rows = [];
 
-[...students].sort((a, b) =>
-  (a.firstName || "").localeCompare(b.firstName || "")
-)
+    [...students]
+      .sort((a, b) => (a.firstName || "").localeCompare(b.firstName || ""))
       .filter((s) => Array.isArray(s.sports) && s.sports.length > 0) // only students with sports
       .forEach((student) => {
         const matchesSearch = `${student.firstName} ${student.lastName}`
@@ -179,6 +186,14 @@ const FeesDetailsPage = () => {
     selectedMonth,
     selectedYear,
   ]);
+  useEffect(() => {
+    const today = new Date();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const year = today.getFullYear().toString();
+
+    setSelectedMonth(month);
+    setSelectedYear(year);
+  }, []);
   /* ================= EDIT STUDENT ================= */
   const handleEditStudent = (student, sport) => {
     setSelectedStudent(student);
@@ -265,17 +280,17 @@ const FeesDetailsPage = () => {
   /* ================= CALCULATIONS ================= */
   const totalStudents = filteredRows.length;
 
- const totalAmount = filteredRows.reduce((sum, row) => {
-  const record = institutesFees.find(
-    (f) =>
-      f.studentId === row.student.id &&
-      f.category === row.sport.category &&
-      f.subCategory === row.sport.subCategory &&
-      f.month === `${selectedYear}-${selectedMonth}`,
-  );
+  const totalAmount = filteredRows.reduce((sum, row) => {
+    const record = institutesFees.find(
+      (f) =>
+        f.studentId === row.student.id &&
+        f.category === row.sport.category &&
+        f.subCategory === row.sport.subCategory &&
+        f.month === `${selectedYear}-${selectedMonth}`,
+    );
 
-  return sum + Number(record?.totalAmount ?? row.sport.fee ?? 0);
-}, 0);
+    return sum + Number(record?.totalAmount ?? row.sport.fee ?? 0);
+  }, 0);
 
   const totalPaid = filteredRows.reduce((sum, row) => {
     const record = institutesFees.find(
@@ -310,7 +325,7 @@ const FeesDetailsPage = () => {
       };
     }
 
-   const total = Number(feeRecord?.totalAmount ?? sport.fee ?? 0);
+    const total = Number(feeRecord?.totalAmount ?? sport.fee ?? 0);
     const paid = Number(feeRecord?.paidAmount || 0);
     const pending = total - paid;
     const paidDate = feeRecord?.paidDate || "-";

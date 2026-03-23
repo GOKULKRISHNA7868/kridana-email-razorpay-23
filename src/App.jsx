@@ -12,7 +12,7 @@ import TrainerSignup from "./pages/TrainerSignup.jsx";
 import InstituteSignup from "./pages/InstituteSignup.jsx";
 import Login from "./pages/Login.jsx";
 import Landing from "./pages/Landing.jsx";
-
+import FeePaymentSuccess from "./pages/FeePaymentSuccess";
 /* ================= NAVBAR ================= */
 import Navbar from "./components/Navbar.jsx";
 import Footer from "./components/Footer";
@@ -117,6 +117,10 @@ function App() {
                 <Route path="/RoleSelection" element={<RoleSelection />} />
                 <Route path="/reels/:index" element={<ReelViewer />} />
                 <Route path="/trending-plays" element={<Reelspage />} />
+                <Route
+                  path="/feepaymentsuccess"
+                  element={<FeePaymentSuccess />}
+                />
                 {/* DASHBOARDS */}
                 <Route
                   path="/trainers/dashboard"

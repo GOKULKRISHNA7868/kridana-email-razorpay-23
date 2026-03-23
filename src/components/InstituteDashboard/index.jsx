@@ -40,10 +40,9 @@ import EventsSidebar from "./Events/EventsSidebar";
 import MyAccountPage from "./MyAccountPage";
 import Family from "./Family";
 import ComplaintHistory from "./ComplaintHistory";
-import PaymentSetup from "./PaymentSetup";
+
 const sidebarItems = [
   "Dashboard",
-  "Payment Setup",
   "Customers Attendance",
   "Customer Details",
   "Family Details",
@@ -183,8 +182,7 @@ const InstituteDashboard = () => {
 
       case "Customers Attendance":
         return <StudentsAttendancePage />;
-      case "Payment Setup":
-        return <PaymentSetup />;
+
       case "Management Attendance":
         return <TrainersAttendancePage />;
       case "Fees Details":

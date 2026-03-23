@@ -225,6 +225,7 @@ const PaymentOverview = () => {
         .map((s) => s.subCategory),
     ),
   ];
+
   return (
     <div className="bg-white min-h-screen p-8">
       {/* Header */}
@@ -291,6 +292,7 @@ const PaymentOverview = () => {
           </div>
 
           {/* Payment History */}
+          {/* Payment History */}
           <div className="p-5 border-b border-orange-300">
             <h4 className="font-semibold mb-3">Payment History</h4>
 
@@ -298,60 +300,118 @@ const PaymentOverview = () => {
               <p className="text-xs text-gray-400">No payments found</p>
             )}
 
-            {generatedMonths.map((item, index) => (
-              <div key={index} className="flex justify-between text-sm mb-3">
-                <div>
-                  <p className="font-medium">
-                    {item.month} {item.year}
-                  </p>
-                  <p className="text-gray-500 text-xs">
-                    Due Date:{item.month} {student.monthlyDate}
-                  </p>
-                </div>
+            {generatedMonths.map((item, index) => {
+              const records = student.sports.map((sport) => {
+                const record = feeHistory.find(
+                  (f) =>
+                    f.month === item.key &&
+                    f.category === sport.category &&
+                    f.subCategory === sport.subCategory,
+                );
 
-                {(() => {
-                  const records = student.sports.map((sport) => {
-                    const record = filteredHistory.find(
+                return {
+                  category: sport.category,
+                  subCategory: sport.subCategory,
+                  paidAmount: record?.paidAmount || 0,
+                  paid: record && Number(record.paidAmount) > 0,
+                };
+              });
+
+              // ✅ Correct pending logic
+              const hasPending = records.some(
+                (r) => !r.paid || r.paidAmount === 0,
+              );
+
+              // Pay Now handler
+              const handlePayNow = () => {
+                const unpaidRecords = student.sports
+                  .map((sport) => {
+                    const record = feeHistory.find(
                       (f) =>
                         f.month === item.key &&
                         f.category === sport.category &&
                         f.subCategory === sport.subCategory,
                     );
 
-                    return {
-                      category: sport.category,
-                      subCategory: sport.subCategory,
-                      paidAmount: record?.paidAmount || 0,
-                      paid: !!record,
-                    };
-                  });
+                    if (!record) {
+                      return {
+                        category: sport.category,
+                        subCategory: sport.subCategory,
+                        amount: Number(sport.fee || 0),
+                      };
+                    }
 
-                  if (records.length === 0) {
-                    return <p className="font-medium text-red-600">Unpaid</p>;
-                  }
+                    return null;
+                  })
+                  .filter(Boolean);
 
-                  return (
-                    <div className="text-right">
-                      {records.map((r, i) => (
-                        <div key={i}>
-                          <p className="text-xs font-medium">
-                            {r.category} - {r.subCategory}
+                const totalAmount = unpaidRecords.reduce(
+                  (sum, r) => sum + r.amount,
+                  0,
+                );
+
+                console.log("Month:", item.key);
+                console.log("Unpaid:", unpaidRecords);
+                console.log("Total Amount:", totalAmount);
+
+                // 🔥 STORE FOR RAZORPAY
+                const paymentPayload = {
+                  month: item.key,
+                  studentId: activeStudentId,
+                  items: unpaidRecords,
+                  totalAmount,
+                };
+
+                console.log("Final Payload:", paymentPayload);
+
+                // 👉 Later:
+                // initiateRazorpay(paymentPayload)
+              };
+
+              return (
+                <div
+                  key={index}
+                  className="flex justify-between items-center text-sm mb-3"
+                >
+                  <div>
+                    <p className="font-medium">
+                      {item.month} {item.year}
+                    </p>
+                    <p className="text-gray-500 text-xs">
+                      Due Date: {item.month} {student.monthlyDate}
+                    </p>
+                  </div>
+
+                  <div className="text-right">
+                    {records.map((r, i) => (
+                      <div key={i}>
+                        <p className="text-xs font-medium">
+                          {r.category} - {r.subCategory}
+                        </p>
+
+                        {r.paid ? (
+                          <p className="text-green-600 text-xs">
+                            Paid ₹{r.paidAmount}
                           </p>
+                        ) : (
+                          <p className="text-red-600 text-xs">Unpaid</p>
+                        )}
+                      </div>
+                    ))}
 
-                          {r.paid ? (
-                            <p className="text-green-600 text-xs">
-                              Paid ₹{r.paidAmount}
-                            </p>
-                          ) : (
-                            <p className="text-red-600 text-xs">Unpaid</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </div>
-            ))}
+                    {/* 🔴 Pay Now button */}
+                    {hasPending && (
+                      <button
+                        onClick={handlePayNow}
+                        className="mt-2 bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700"
+                      >
+                        Pay Now
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           {/* Bottom Summary */}

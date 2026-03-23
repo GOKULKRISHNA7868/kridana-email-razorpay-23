@@ -123,7 +123,7 @@ const StudentsAttendancePage = () => {
           (!selectedCategory || data.category === selectedCategory) &&
           (!selectedSubCategory || data.subCategory === selectedSubCategory)
         ) {
-          const key = `${data.studentId}_${data.category}_${data.subCategory}`;
+          const key = `${data.studentId}||${data.category}||${data.subCategory}`;
           map[key] = {
             status: data.status,
             reason: data.reason || "",
@@ -194,7 +194,7 @@ const StudentsAttendancePage = () => {
     let absent = 0;
 
     filteredStudents.forEach((student) => {
-      const key = `${student.uid}_${selectedCategory}_${selectedSubCategory}`;
+      const key = `${student.uid}||${selectedCategory}||${selectedSubCategory}`;
       const status = draftAttendance[key]?.status;
 
       if (status === "present") present++;
@@ -223,7 +223,7 @@ const StudentsAttendancePage = () => {
 
   // Save Attendance
   const saveAttendance = (student, status, reason = "") => {
-    const key = `${student.uid}_${selectedCategory}_${selectedSubCategory}`;
+    const key = `${student.uid}||${selectedCategory}||${selectedSubCategory}`;
 
     setDraftAttendance((prev) => ({
       ...prev,
@@ -281,37 +281,47 @@ const StudentsAttendancePage = () => {
     }
     const dayName = getDayName(selectedDate);
 
-    const promises = Object.entries(draftAttendance).map(([key, status]) => {
-      const [studentId] = key.split("_");
+    const promises = Object.entries(draftAttendance)
+      .map(([key, status]) => {
+        const parts = key.split("||");
 
-      const student = students.find((s) => s.uid === studentId);
+        const studentId = parts[0];
+        const category = parts[1] || "";
+        const subCategory = parts[2] || "";
 
-      return setDoc(
-        doc(
-          db,
-          "institutes",
-          user.uid,
-          "attendance",
-          `${studentId}_${selectedDate}_${selectedCategory}_${selectedSubCategory}`,
-        ),
-        {
-          instituteId: user.uid,
-          studentId,
-          category: selectedCategory,
-          subCategory: selectedSubCategory,
-          session: student?.sessions || "General",
-          date: selectedDate,
-          day: dayName,
-          time: selectedTime || "",
-          status: status.status,
-          reason: status.reason || "",
-          updatedAt: serverTimestamp(),
-          createdAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
-    });
+        if (!studentId || !category || !subCategory) {
+          console.warn("Skipping invalid record:", key);
+          return null; // 🚫 skip invalid
+        }
 
+        const student = students.find((s) => s.uid === studentId);
+
+        return setDoc(
+          doc(
+            db,
+            "institutes",
+            user.uid,
+            "attendance",
+            `${studentId}_${selectedDate}_${category}_${subCategory}`,
+          ),
+          {
+            instituteId: user.uid,
+            studentId,
+            category,
+            subCategory,
+            session: student?.sessions || "General",
+            date: selectedDate,
+            day: dayName,
+            time: selectedTime || "",
+            status: status.status,
+            reason: status.reason || "",
+            updatedAt: serverTimestamp(),
+            createdAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+      })
+      .filter(Boolean); // ✅ remove nulls
     await Promise.all(promises);
     alert("Attendance saved ✅");
   };
@@ -620,7 +630,7 @@ const StudentsAttendancePage = () => {
 
         <div className="bg-white min-h-[300px]">
           {paginatedStudents.map((s, index) => {
-            const key = `${s.uid}_${selectedCategory}_${selectedSubCategory}`;
+            const key = `${s.uid}||${selectedCategory}||${selectedSubCategory}`;
             const record = draftAttendance[key];
 
             return (

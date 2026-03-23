@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { useSelectedStudent } from "../../context/SelectedStudentContext";
+import { useNavigate } from "react-router-dom";
 const PaymentOverview = () => {
   const [student, setStudent] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -19,11 +20,14 @@ const PaymentOverview = () => {
   const [generatedMonths, setGeneratedMonths] = useState([]);
   const { selectedStudentUid } = useSelectedStudent();
   const [user, setUser] = useState(null);
-  const activeStudentId = selectedStudentUid || user?.uid;
+  const activeStudentId =
+    selectedStudentUid && selectedStudentUid !== ""
+      ? selectedStudentUid
+      : user?.uid;
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedSubCategory, setSelectedSubCategory] = useState("");
   const [feeHistory, setFeeHistory] = useState([]);
-
+  const navigate = useNavigate();
   const filteredHistory = feeHistory.filter(
     (f) =>
       (!selectedCategory || f.category === selectedCategory) &&
@@ -34,6 +38,20 @@ const PaymentOverview = () => {
     (sum, f) => sum + Number(f.paidAmount || 0),
     0,
   );
+  const [processing, setProcessing] = useState(false);
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+  const API_URL =
+    window.location.hostname === "localhost"
+      ? "http://localhost:5000"
+      : "https://kridana-razorpay-backend.onrender.com";
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       if (!u) {
@@ -46,7 +64,7 @@ const PaymentOverview = () => {
     return () => unsub();
   }, []);
   useEffect(() => {
-    if (!activeStudentId) return;
+    if (!activeStudentId || activeStudentId === "") return;
 
     const fetchStudentData = async () => {
       setLoading(true);
@@ -57,7 +75,8 @@ const PaymentOverview = () => {
         // =========================
         const studentRef = doc(db, "trainerstudents", activeStudentId);
         const snap = await getDoc(studentRef);
-
+        console.log("Selected UID:", selectedStudentUid);
+        console.log("Active UID:", activeStudentId);
         if (!snap.exists()) {
           setLoading(false);
           return;
@@ -305,13 +324,13 @@ const PaymentOverview = () => {
                     {item.month} {item.year}
                   </p>
                   <p className="text-gray-500 text-xs">
-                    Due Date: {item.month} {5}
+                    Due Date: {item.month} {student.monthlyDate}
                   </p>
                 </div>
 
                 {(() => {
                   const records = student.sports.map((sport) => {
-                    const record = filteredHistory.find(
+                    const record = feeHistory.find(
                       (f) =>
                         f.month === item.key &&
                         f.category === sport.category &&
@@ -322,13 +341,127 @@ const PaymentOverview = () => {
                       category: sport.category,
                       subCategory: sport.subCategory,
                       paidAmount: record?.paidAmount || 0,
-                      paid: !!record,
+                      paid: record && Number(record.paidAmount) > 0, // ✅ FIX
                     };
                   });
 
-                  if (records.length === 0) {
-                    return <p className="font-medium text-red-600">Unpaid</p>;
-                  }
+                  const hasPending = records.some(
+                    (r) => !r.paid || r.paidAmount === 0,
+                  );
+
+                  // 🔥 PAY NOW HANDLER
+                  const handlePayNow = async () => {
+                    if (processing) return;
+                    setProcessing(true);
+
+                    const unpaidRecords = student.sports
+                      .map((sport) => {
+                        const record = feeHistory.find(
+                          (f) =>
+                            f.month === item.key &&
+                            f.category === sport.category &&
+                            f.subCategory === sport.subCategory,
+                        );
+
+                        if (!record || Number(record.paidAmount) === 0) {
+                          return {
+                            category: sport.category,
+                            subCategory: sport.subCategory,
+                            amount: Number(sport.fee || 0),
+                          };
+                        }
+
+                        return null;
+                      })
+                      .filter(Boolean);
+
+                    const totalAmount = unpaidRecords.reduce(
+                      (sum, r) => sum + r.amount,
+                      0,
+                    );
+
+                    if (totalAmount <= 0) {
+                      alert("Invalid amount");
+                      setProcessing(false);
+                      return;
+                    }
+
+                    const isLoaded = await loadRazorpayScript();
+                    if (!isLoaded) {
+                      alert("Razorpay SDK failed");
+                      setProcessing(false);
+                      return;
+                    }
+
+                    try {
+                      const res = await fetch(`${API_URL}/create-order`, {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({ amount: totalAmount }),
+                      });
+
+                      const order = await res.json();
+
+                      const options = {
+                        key: "rzp_live_SUjQtjkrUIwaHm",
+                        amount: order.amount,
+                        currency: "INR",
+                        name: "Kridana Sports",
+                        description: `Fee Payment - ${item.month}`,
+                        order_id: order.id,
+
+                        prefill: {
+                          name: `${student.firstName} ${student.lastName}`,
+                          email: student.email || "",
+                          contact: student.phone || "",
+                        },
+
+                        handler: async function (response) {
+                          console.log("✅ PAYMENT SUCCESS:", response);
+
+                          // 🔐 VERIFY
+                          await fetch(`${API_URL}/verify-payment`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(response),
+                          });
+
+                          const paymentData = {
+                            studentId: activeStudentId,
+                            month: item.key,
+                            items: unpaidRecords,
+                            totalAmount,
+                            ...response,
+                            status: "success",
+                            createdAt: new Date(),
+                          };
+
+                          navigate("/feepaymentsuccess", {
+                            state: paymentData,
+                          });
+                        },
+
+                        theme: {
+                          color: "#2563eb",
+                        },
+                      };
+
+                      const rzp = new window.Razorpay(options);
+
+                      rzp.on("payment.failed", function (response) {
+                        console.error("❌ FAILED:", response);
+                        alert("Payment failed");
+                        setProcessing(false);
+                      });
+
+                      rzp.open();
+                    } catch (err) {
+                      console.error("❌ ERROR:", err);
+                      setProcessing(false);
+                    }
+                  };
 
                   return (
                     <div className="text-right">
@@ -347,6 +480,16 @@ const PaymentOverview = () => {
                           )}
                         </div>
                       ))}
+
+                      {/* ✅ PAY BUTTON */}
+                      {hasPending && (
+                        <button
+                          onClick={handlePayNow}
+                          className="mt-2 bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700"
+                        >
+                          Pay Now
+                        </button>
+                      )}
                     </div>
                   );
                 })()}

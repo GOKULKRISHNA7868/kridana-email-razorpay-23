@@ -12,7 +12,7 @@ import { useNavigate } from "react-router-dom";
 import { db, secondaryAuth } from "../../firebase";
 import { useAuth } from "../../context/AuthContext";
 import { User, ChevronDown } from "lucide-react";
-
+import { getDoc } from "firebase/firestore";
 /* -------------------- STYLES -------------------- */
 const inputClass =
   "h-11 px-3 border border-orange-400 rounded-md bg-white outline-none focus:border-2 focus:border-orange-500";
@@ -38,7 +38,12 @@ export default function AddTrainerDetailsPage() {
   const profileInputRef = useRef(null);
 
   const aadharInputRef = useRef(null);
+  const [showRelationPopup, setShowRelationPopup] = useState(false);
+  const [relationType, setRelationType] = useState("");
+  const [existingUid, setExistingUid] = useState("");
 
+  const [usedInOtherInstitute, setUsedInOtherInstitute] = useState(null); // null → not answered yet
+  const [instituteName, setInstituteName] = useState("");
   const categories = [
     "Martial Arts",
     "Team Ball Sports",
@@ -589,7 +594,10 @@ export default function AddTrainerDetailsPage() {
     return urls;
   };
 
+  // -------------------- HANDLE SUBMIT --------------------
   const handleSubmit = async () => {
+    if (isSaving) return;
+
     if (!validateStep()) {
       alert("Please fill all required fields");
       return;
@@ -603,19 +611,56 @@ export default function AddTrainerDetailsPage() {
     try {
       setIsSaving(true); // ✅ START LOADING
 
-      const cred = await createUserWithEmailAndPassword(
-        secondaryAuth,
-        formData.email,
-        DEFAULT_PASSWORD,
-      );
+      let studentUid = "";
+      const emailDocId = formData.email.replace(/\./g, "_");
 
-      const studentUid = cred.user.uid;
+      try {
+        // 🔹 TRY CREATING NEW USER
+        const cred = await createUserWithEmailAndPassword(
+          secondaryAuth,
+          formData.email,
+          DEFAULT_PASSWORD,
+        );
 
+        studentUid = cred.user.uid;
+
+        // 🔹 SAVE EMAIL → UID IN MEMORY
+        await setDoc(doc(db, "memory", emailDocId), {
+          email: formData.email,
+          uid: studentUid,
+          createdAt: serverTimestamp(),
+        });
+      } catch (err) {
+        if (err.code === "auth/email-already-in-use") {
+          // 🔥 EMAIL EXISTS → FETCH BASE UID
+          const snap = await getDoc(doc(db, "memory", emailDocId));
+
+          if (!snap.exists()) {
+            alert("Email exists but not found in memory");
+            setIsSaving(false);
+            return;
+          }
+
+          const baseUid = snap.data().uid;
+
+          // 🔥 STORE FOR RELATION FLOW
+          setExistingUid(baseUid);
+          setShowRelationPopup(true);
+
+          setIsSaving(false);
+          return;
+        } else {
+          throw err;
+        }
+      }
+
+      /* ==============================
+       🔹 CLOUDINARY UPLOADS
+    ============================== */
       const { aadharFiles, ...rest } = formData;
 
       const profileFile = profileInputRef.current?.files?.[0];
       let profileImageUrl = "";
-
       if (profileFile) {
         profileImageUrl = await uploadImageToCloudinary(profileFile);
       }
@@ -624,6 +669,10 @@ export default function AddTrainerDetailsPage() {
       if (aadharFiles?.length) {
         aadharUrls = await uploadMultipleToCloudinary(aadharFiles);
       }
+
+      /* ==============================
+       🔹 SPORTS DATA
+    ============================== */
       const sportData = {
         category: formData.category,
         subCategory: formData.subCategory,
@@ -633,18 +682,21 @@ export default function AddTrainerDetailsPage() {
         sessions: formData.sessions,
         timings: formData.timings,
       };
+
+      /* ==============================
+       🔹 FIRESTORE SAVE
+    ============================== */
       await setDoc(doc(db, "trainerstudents", studentUid), {
         ...rest,
-
-        sports: [sportData], // ✅ sports array
-
+        sports: [sportData],
         aadharFilesCount: aadharFiles.length,
         profileImageUrl,
         aadharUrls,
-
         studentUid,
         trainerId: user.uid,
         role: "student",
+        baseUid: studentUid,
+        relation: "self",
         createdAt: serverTimestamp(),
       });
 
@@ -653,18 +705,119 @@ export default function AddTrainerDetailsPage() {
       });
 
       alert(
-        `Student created successfully!
-
-Login Details:
-Email: ${formData.email}
-Password: ${DEFAULT_PASSWORD}`,
+        `Student created successfully!\n\nLogin Details:\nEmail: ${formData.email}\nPassword: ${DEFAULT_PASSWORD}`,
       );
+
       resetForm();
     } catch (err) {
       alert(err.message);
     } finally {
       setIsSaving(false); // ✅ STOP LOADING ALWAYS
     }
+  };
+
+  // -------------------- HANDLE RELATION CONTINUE --------------------
+  const handleRelationContinue = async () => {
+    if (!relationType) {
+      alert("Please select relation");
+      return;
+    }
+
+    const newUid = `${existingUid}_${relationType.toLowerCase()}`;
+
+    try {
+      setIsSaving(true);
+
+      const { aadharFiles, ...rest } = formData;
+
+      const profileFile = profileInputRef.current?.files?.[0];
+      let profileImageUrl = "";
+      if (profileFile) {
+        profileImageUrl = await uploadImageToCloudinary(profileFile);
+      }
+
+      let aadharUrls = [];
+      if (aadharFiles?.length) {
+        aadharUrls = await uploadMultipleToCloudinary(aadharFiles);
+      }
+
+      const sportData = {
+        category: formData.category,
+        subCategory: formData.subCategory,
+        belt: formData.category === "Martial Arts" ? formData.belt : "",
+        skillLevel:
+          formData.category !== "Martial Arts" ? formData.skillLevel : "",
+        sessions: formData.sessions,
+        timings: formData.timings,
+      };
+
+      await setDoc(doc(db, "trainerstudents", newUid), {
+        ...rest,
+        sports: [sportData],
+        aadharFilesCount: aadharFiles.length,
+        profileImageUrl,
+        aadharUrls,
+        studentUid: newUid,
+        trainerId: user.uid,
+        role: "student",
+        baseUid: existingUid,
+        relation: relationType,
+        createdAt: serverTimestamp(),
+      });
+
+      await updateDoc(doc(db, "trainers", user.uid), {
+        students: arrayUnion(newUid),
+      });
+
+      alert("Student added with shared email successfully!");
+
+      setShowRelationPopup(false);
+      resetForm();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+  const saveStudentWithUid = async (uidToUse, baseUid) => {
+    const { aadharFiles, ...rest } = formData;
+
+    const profileFile = profileInputRef.current?.files?.[0];
+    let profileImageUrl = "";
+    if (profileFile)
+      profileImageUrl = await uploadImageToCloudinary(profileFile);
+
+    let aadharUrls = [];
+    if (aadharFiles?.length)
+      aadharUrls = await uploadMultipleToCloudinary(aadharFiles);
+
+    const sportData = {
+      category: formData.category,
+      subCategory: formData.subCategory,
+      belt: formData.category === "Martial Arts" ? formData.belt : "",
+      skillLevel:
+        formData.category !== "Martial Arts" ? formData.skillLevel : "",
+      sessions: formData.sessions,
+      timings: formData.timings,
+    };
+
+    await setDoc(doc(db, "trainerstudents", uidToUse), {
+      ...rest,
+      sports: [sportData],
+      aadharFilesCount: aadharFiles.length,
+      profileImageUrl,
+      aadharUrls,
+      studentUid: uidToUse,
+      trainerId: user.uid,
+      role: "student",
+      baseUid,
+      relation: uidToUse === baseUid ? "self" : "other",
+      createdAt: serverTimestamp(),
+    });
+
+    await updateDoc(doc(db, "trainers", user.uid), {
+      students: arrayUnion(uidToUse),
+    });
   };
 
   useEffect(() => {
@@ -739,8 +892,9 @@ Password: ${DEFAULT_PASSWORD}`,
               {[1, 2].map((s) => (
                 <div
                   key={s}
-                  className={`h-3 flex-1 rounded-full ${step >= s ? "bg-orange-500" : "bg-gray-300"
-                    }`}
+                  className={`h-3 flex-1 rounded-full ${
+                    step >= s ? "bg-orange-500" : "bg-gray-300"
+                  }`}
                 />
               ))}
             </div>
@@ -926,8 +1080,9 @@ Password: ${DEFAULT_PASSWORD}`,
 
                   <ChevronDown
                     size={16}
-                    className={`transition-transform ${showCategoryDropdown ? "rotate-180" : ""
-                      }`}
+                    className={`transition-transform ${
+                      showCategoryDropdown ? "rotate-180" : ""
+                    }`}
                   />
                 </button>
 
@@ -977,8 +1132,9 @@ Password: ${DEFAULT_PASSWORD}`,
                     formData.category &&
                     setShowSubCategoryDropdown(!showSubCategoryDropdown)
                   }
-                  className={`${inputClass} w-full flex items-center justify-between ${!formData.category && "bg-gray-100 cursor-not-allowed"
-                    }`}
+                  className={`${inputClass} w-full flex items-center justify-between ${
+                    !formData.category && "bg-gray-100 cursor-not-allowed"
+                  }`}
                 >
                   <span>
                     {formData.subCategory
@@ -990,8 +1146,9 @@ Password: ${DEFAULT_PASSWORD}`,
 
                   <ChevronDown
                     size={16}
-                    className={`transition-transform ${showSubCategoryDropdown ? "rotate-180" : ""
-                      }`}
+                    className={`transition-transform ${
+                      showSubCategoryDropdown ? "rotate-180" : ""
+                    }`}
                   />
                 </button>
 
@@ -1098,14 +1255,15 @@ Password: ${DEFAULT_PASSWORD}`,
                   <span>
                     {formData.timings
                       ? timeSlots.find((t) => t.value === formData.timings)
-                        ?.label
+                          ?.label
                       : "Select Time"}
                   </span>
 
                   <ChevronDown
                     size={16}
-                    className={`transition-transform ${showTimeDropdown ? "rotate-180" : ""
-                      }`}
+                    className={`transition-transform ${
+                      showTimeDropdown ? "rotate-180" : ""
+                    }`}
                   />
                 </button>
 
@@ -1323,10 +1481,11 @@ Password: ${DEFAULT_PASSWORD}`,
                   onClick={handleSubmit}
                   disabled={isSaving}
                   className={`px-10 py-3 rounded-lg font-semibold text-white transition
-    ${isSaving
-                      ? "bg-orange-300 cursor-not-allowed"
-                      : "bg-orange-500 hover:bg-orange-600"
-                    }
+    ${
+      isSaving
+        ? "bg-orange-300 cursor-not-allowed"
+        : "bg-orange-500 hover:bg-orange-600"
+    }
   `}
                 >
                   {isSaving ? "Saving..." : "Save"}
@@ -1349,6 +1508,105 @@ Password: ${DEFAULT_PASSWORD}`,
           </div>
         )}
       </div>
+      {showRelationPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-50">
+          <div className="bg-white p-6 rounded-lg w-80">
+            <h3 className="text-lg font-bold mb-4">Email already exists</h3>
+
+            {/* STEP 1: Ask if used in other institute */}
+            {usedInOtherInstitute === null && (
+              <div className="flex flex-col gap-3">
+                <p>Is this email used in another institute/trainer?</p>
+                <div className="flex justify-between mt-2">
+                  <button
+                    onClick={() => setUsedInOtherInstitute(true)}
+                    className="bg-orange-500 text-white px-4 py-2 rounded"
+                  >
+                    Yes
+                  </button>
+                  <button
+                    onClick={() => setUsedInOtherInstitute(false)}
+                    className="bg-gray-300 px-4 py-2 rounded"
+                  >
+                    No
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 2A: Enter institute/trainer name if Yes */}
+            {usedInOtherInstitute === true && (
+              <div className="flex flex-col gap-3">
+                <label className="text-sm mb-1">
+                  Enter Institute/Trainer Name
+                </label>
+                <input
+                  type="text"
+                  className={inputClass}
+                  value={instituteName}
+                  onChange={(e) => setInstituteName(e.target.value)}
+                />
+                <div className="flex justify-end gap-4 mt-4">
+                  <button onClick={() => setShowRelationPopup(false)}>
+                    Cancel
+                  </button>
+                  <button
+                    className="bg-orange-500 text-white px-4 py-2 rounded"
+                    onClick={async () => {
+                      if (!instituteName.trim()) {
+                        alert("Please enter institute/trainer name");
+                        return;
+                      }
+                      const newUid = `${existingUid}_${instituteName
+                        .trim()
+                        .replace(/\s+/g, "_")}`;
+
+                      await saveStudentWithUid(newUid, existingUid); // reuse your save function
+                      alert(
+                        "Student added under another institute/trainer successfully!",
+                      );
+                      setShowRelationPopup(false);
+                      resetForm();
+                    }}
+                  >
+                    Continue
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 2B: Select relation if No */}
+            {usedInOtherInstitute === false && (
+              <div className="flex flex-col gap-3">
+                <label className="text-sm mb-1">Select Relation</label>
+                <select
+                  className={inputClass}
+                  value={relationType}
+                  onChange={(e) => setRelationType(e.target.value)}
+                >
+                  <option value="">Select Relation</option>
+                  <option value="Brother">Brother</option>
+                  <option value="Sister">Sister</option>
+                  <option value="Father">Father</option>
+                  <option value="Mother">Mother</option>
+                </select>
+
+                <div className="flex justify-end gap-4 mt-4">
+                  <button onClick={() => setShowRelationPopup(false)}>
+                    Cancel
+                  </button>
+                  <button
+                    className="bg-orange-500 text-white px-4 py-2 rounded"
+                    onClick={handleRelationContinue}
+                  >
+                    Continue
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

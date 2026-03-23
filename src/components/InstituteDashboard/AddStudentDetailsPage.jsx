@@ -12,7 +12,7 @@ import { useNavigate } from "react-router-dom";
 import { db, secondaryAuth } from "../../firebase";
 import { useAuth } from "../../context/AuthContext";
 import { User, ChevronDown } from "lucide-react";
-
+import { getDoc } from "firebase/firestore";
 /* -------------------- STYLES -------------------- */
 const inputClass =
   "h-11 px-3 w-full border border-orange-400 rounded-md bg-white outline-none focus:border-2 focus:border-orange-500";
@@ -39,7 +39,13 @@ export default function AddTrainerDetailsPage() {
   const profileInputRef = useRef(null);
 
   const aadharInputRef = useRef(null);
+  const [showRelationPopup, setShowRelationPopup] = useState(false);
+  const [relationType, setRelationType] = useState("");
+  const [existingUid, setExistingUid] = useState("");
+  const [relationMode, setRelationMode] = useState("");
+  // "family" | "institute"
 
+  const [newInstituteName, setNewInstituteName] = useState("");
   const categories = [
     "Martial Arts",
     "Team Ball Sports",
@@ -603,8 +609,44 @@ export default function AddTrainerDetailsPage() {
     sessions: formData.sessions,
     timings: formData.timings,
   };
+  const saveStudent = async (customerUid) => {
+    const { aadharFiles, ...rest } = formData;
+
+    const profileFile = profileInputRef.current?.files?.[0];
+    let profileImageUrl = "";
+
+    if (profileFile) {
+      profileImageUrl = await uploadImageToCloudinary(profileFile);
+    }
+
+    let aadharUrls = [];
+    if (aadharFiles?.length) {
+      aadharUrls = await uploadMultipleToCloudinary(aadharFiles);
+    }
+
+    await setDoc(doc(db, "students", customerUid), {
+      ...rest,
+      sports: [sportObject],
+      profileImageUrl,
+      aadharUrls,
+      aadharFilesCount: aadharFiles.length,
+      customerUid,
+      instituteId: user.uid,
+      role: "customer",
+      monthlyFee: Number(formData.monthlyFee),
+      defaultPassword: true,
+      createdAt: serverTimestamp(),
+    });
+
+    await updateDoc(doc(db, "institutes", user.uid), {
+      customers: arrayUnion(customerUid),
+    });
+
+    alert("Student added successfully!");
+    resetForm();
+  };
   const handleSubmit = async () => {
-    if (isSaving) return; // 🚫 prevent double click
+    if (isSaving) return;
 
     if (!validateStep()) {
       alert("Please fill all required fields");
@@ -617,24 +659,61 @@ export default function AddTrainerDetailsPage() {
     }
 
     try {
-      setIsSaving(true); // 🔒 lock UI
+      setIsSaving(true);
 
-      // ✅ Create auth user using USER PROVIDED EMAIL
-      const cred = await createUserWithEmailAndPassword(
-        secondaryAuth,
-        formData.email,
-        DEFAULT_PASSWORD,
-      );
+      let customerUid = "";
+      let isExistingUser = false;
 
-      const customerUid = cred.user.uid;
+      const emailDocId = formData.email.replace(/\./g, "_");
 
-      const { aadharFiles, ...rest } = formData;
+      try {
+        // 🔹 Try creating new auth user
+        const cred = await createUserWithEmailAndPassword(
+          secondaryAuth,
+          formData.email,
+          DEFAULT_PASSWORD,
+        );
+
+        customerUid = cred.user.uid;
+
+        // 🔹 Save in memory (new email)
+        await setDoc(doc(db, "memory", emailDocId), {
+          email: formData.email,
+          uid: customerUid,
+          createdAt: serverTimestamp(),
+        });
+      } catch (err) {
+        if (err.code === "auth/email-already-in-use") {
+          // 🔥 Email exists → fetch UID from memory
+          const snap = await getDoc(doc(db, "memory", emailDocId));
+
+          if (!snap.exists()) {
+            alert("Email exists but not found in memory");
+            setIsSaving(false);
+            return;
+          }
+
+          const baseUid = snap.data().uid;
+
+          // 🔥 Ask relation (you already have popup state)
+          setExistingUid(baseUid);
+          setRelationMode(""); // reset mode
+          setNewInstituteName("");
+          setRelationType("");
+          setShowRelationPopup(true);
+          setIsSaving(false);
+          return;
+        } else {
+          throw err;
+        }
+      }
 
       /* ==============================
        🔹 CLOUDINARY UPLOADS
     ============================== */
 
-      // Profile Image Upload
+      const { aadharFiles, ...rest } = formData;
+
       const profileFile = profileInputRef.current?.files?.[0];
       let profileImageUrl = "";
 
@@ -642,19 +721,18 @@ export default function AddTrainerDetailsPage() {
         profileImageUrl = await uploadImageToCloudinary(profileFile);
       }
 
-      // Aadhaar Upload (Front + Back)
       let aadharUrls = [];
       if (aadharFiles?.length) {
         aadharUrls = await uploadMultipleToCloudinary(aadharFiles);
       }
 
       /* ==============================
-       🔹 FIREBASE SAVE (URLS ONLY)
+       🔹 FIREBASE SAVE
     ============================== */
 
       await setDoc(doc(db, "students", customerUid), {
         ...rest,
-        sports: [sportObject], // array
+        sports: [sportObject],
         profileImageUrl,
         aadharUrls,
         aadharFilesCount: aadharFiles.length,
@@ -670,22 +748,45 @@ export default function AddTrainerDetailsPage() {
         customers: arrayUnion(customerUid),
       });
 
-      alert(
-        `Customer account created successfully!
+      alert(`Customer account created successfully!
 
 Login Details
 Email: ${formData.email}
-Password: ${DEFAULT_PASSWORD}`,
-      );
+Password: ${DEFAULT_PASSWORD}`);
 
       resetForm();
     } catch (err) {
       alert(err.message);
     } finally {
-      setIsSaving(false); // 🔓 unlock UI
+      setIsSaving(false);
     }
   };
+  const handleRelationContinue = async () => {
+    let newUid = "";
 
+    if (relationMode === "family") {
+      if (!relationType) {
+        alert("Please select relation");
+        return;
+      }
+
+      newUid = `${existingUid}_${relationType.toLowerCase()}`;
+    }
+
+    if (relationMode === "institute") {
+      if (!newInstituteName.trim()) {
+        alert("Please enter institute name");
+        return;
+      }
+
+      const cleanName = newInstituteName.toLowerCase().replace(/\s+/g, "");
+      newUid = `${existingUid}_${cleanName}`;
+    }
+
+    await saveStudent(newUid);
+
+    setShowRelationPopup(false);
+  };
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (timeRef.current && !timeRef.current.contains(e.target)) {
@@ -756,8 +857,9 @@ Password: ${DEFAULT_PASSWORD}`,
               {[1, 2].map((s) => (
                 <div
                   key={s}
-                  className={`h-3 flex-1 rounded-full ${step >= s ? "bg-orange-500" : "bg-gray-300"
-                    }`}
+                  className={`h-3 flex-1 rounded-full ${
+                    step >= s ? "bg-orange-500" : "bg-gray-300"
+                  }`}
                 />
               ))}
             </div>
@@ -801,16 +903,16 @@ Password: ${DEFAULT_PASSWORD}`,
               <input
                 className={inputClass}
                 value={formData.lastName}
-onChange={(e) => {
-  let value = e.target.value.replace(/[^A-Za-z.\s]/g, "");
+                onChange={(e) => {
+                  let value = e.target.value.replace(/[^A-Za-z.\s]/g, "");
 
-  // ✅ Capitalize first letter
-  if (value.length > 0) {
-    value = value.charAt(0).toUpperCase() + value.slice(1);
-  }
+                  // ✅ Capitalize first letter
+                  if (value.length > 0) {
+                    value = value.charAt(0).toUpperCase() + value.slice(1);
+                  }
 
-  setFormData((prev) => ({ ...prev, lastName: value }));
-}}
+                  setFormData((prev) => ({ ...prev, lastName: value }));
+                }}
               />
               {errors.lastName && (
                 <span className="text-red-500 text-xs mt-1">
@@ -941,8 +1043,9 @@ onChange={(e) => {
 
                   <ChevronDown
                     size={18}
-                    className={`ml-2 flex-shrink-0 transition-transform ${showCategoryDropdown ? "rotate-180" : ""
-                      }`}
+                    className={`ml-2 flex-shrink-0 transition-transform ${
+                      showCategoryDropdown ? "rotate-180" : ""
+                    }`}
                   />
                 </button>
 
@@ -994,8 +1097,9 @@ onChange={(e) => {
                     formData.category &&
                     setShowSubCategoryDropdown(!showSubCategoryDropdown)
                   }
-                  className={`${inputClass} w-full flex items-center justify-between text-left ${!formData.category && "bg-gray-100 cursor-not-allowed"
-                    }`}
+                  className={`${inputClass} w-full flex items-center justify-between text-left ${
+                    !formData.category && "bg-gray-100 cursor-not-allowed"
+                  }`}
                 >
                   <span>
                     {formData.subCategory
@@ -1007,8 +1111,9 @@ onChange={(e) => {
 
                   <ChevronDown
                     size={18}
-                    className={`ml-2 flex-shrink-0 transition-transform ${showSubCategoryDropdown ? "rotate-180" : ""
-                      }`}
+                    className={`ml-2 flex-shrink-0 transition-transform ${
+                      showSubCategoryDropdown ? "rotate-180" : ""
+                    }`}
                   />
                 </button>
                 {showSubCategoryDropdown && (
@@ -1122,14 +1227,15 @@ onChange={(e) => {
                   <span>
                     {formData.timings
                       ? timeSlots.find((t) => t.value === formData.timings)
-                        ?.label
+                          ?.label
                       : "Select Time"}
                   </span>
 
                   <ChevronDown
                     size={18}
-                    className={`ml-2 flex-shrink-0 transition-transform ${showTimeDropdown ? "rotate-180" : ""
-                      }`}
+                    className={`ml-2 flex-shrink-0 transition-transform ${
+                      showTimeDropdown ? "rotate-180" : ""
+                    }`}
                   />
                 </button>
 
@@ -1203,23 +1309,23 @@ onChange={(e) => {
             </div>
             <div className="flex flex-col">
               <label className="text-sm font-semibold mb-2">
-                Branch Number<span className="text-red-500">*</span>
+                Branch Number or Name<span className="text-red-500">*</span>
               </label>
-<input
-  type="text"
-  inputMode="numeric"
-  pattern="[0-9]*"
-  className={inputClass}
-  value={formData.branch}
-  placeholder="Enter branch number"
-  onChange={(e) => {
-    const value = e.target.value.replace(/\D/g, ""); // 🔒 remove non-numbers
-    setFormData((prev) => ({
-      ...prev,
-      branch: value,
-    }));
-  }}
-/>
+              <input
+                type="text"
+                className={inputClass}
+                value={formData.branch}
+                placeholder="Enter branch name or number"
+                onChange={(e) => {
+                  const value = e.target.value.replace(/[^A-Za-z0-9\s-]/g, "");
+                  // allows letters, numbers, space, dash
+
+                  setFormData((prev) => ({
+                    ...prev,
+                    branch: value,
+                  }));
+                }}
+              />
 
               {errors.branch && (
                 <span className="text-red-500 text-xs mt-1">
@@ -1403,6 +1509,124 @@ onChange={(e) => {
           </div>
         )}
       </div>
+      {showRelationPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-50">
+          <div className="bg-white p-6 rounded-lg w-80">
+            <h3 className="text-lg font-bold mb-4">Email already exists</h3>
+
+            <select
+              className={inputClass}
+              value={relationType}
+              onChange={(e) => setRelationType(e.target.value)}
+            >
+              <option value="">Select Relation</option>
+              <option value="Brother">Brother</option>
+              <option value="Sister">Sister</option>
+              <option value="Father">Father</option>
+              <option value="Mother">Mother</option>
+            </select>
+
+            <div className="flex justify-end gap-4 mt-4">
+              <button onClick={() => setShowRelationPopup(false)}>
+                Cancel
+              </button>
+              <button
+                onClick={handleRelationContinue}
+                className="bg-orange-500 text-white px-4 py-2 rounded"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showRelationPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-50">
+          <div className="bg-white p-6 rounded-lg w-80">
+            <h3 className="text-lg font-bold mb-4">Email already exists</h3>
+
+            {/* STEP 1 */}
+            {!relationMode && (
+              <>
+                <p className="mb-3 text-sm">
+                  Is this email used in another institute/trainer?
+                </p>
+
+                <div className="flex justify-between gap-3">
+                  <button
+                    onClick={() => setRelationMode("institute")}
+                    className="bg-blue-500 text-white px-3 py-2 rounded w-full"
+                  >
+                    Yes
+                  </button>
+
+                  <button
+                    onClick={() => setRelationMode("family")}
+                    className="bg-green-500 text-white px-3 py-2 rounded w-full"
+                  >
+                    No
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* STEP 2 → INSTITUTE */}
+            {relationMode === "institute" && (
+              <>
+                <label className="text-sm font-semibold mb-2 block">
+                  Enter Institute Name
+                </label>
+
+                <input
+                  className={inputClass}
+                  value={newInstituteName}
+                  onChange={(e) =>
+                    setNewInstituteName(
+                      e.target.value.replace(/[^A-Za-z0-9]/g, ""),
+                    )
+                  }
+                  placeholder="Institute name"
+                />
+              </>
+            )}
+
+            {/* STEP 2 → FAMILY */}
+            {relationMode === "family" && (
+              <>
+                <label className="text-sm font-semibold mb-2 block">
+                  Select Relation
+                </label>
+
+                <select
+                  className={inputClass}
+                  value={relationType}
+                  onChange={(e) => setRelationType(e.target.value)}
+                >
+                  <option value="">Select Relation</option>
+                  <option value="Brother">Brother</option>
+                  <option value="Sister">Sister</option>
+                  <option value="Father">Father</option>
+                  <option value="Mother">Mother</option>
+                </select>
+              </>
+            )}
+
+            {/* ACTION BUTTONS */}
+            <div className="flex justify-end gap-4 mt-4">
+              <button onClick={() => setShowRelationPopup(false)}>
+                Cancel
+              </button>
+
+              <button
+                onClick={handleRelationContinue}
+                className="bg-orange-500 text-white px-4 py-2 rounded"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

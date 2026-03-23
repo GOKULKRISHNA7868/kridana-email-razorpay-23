@@ -21,6 +21,7 @@ import {
 } from "firebase/firestore";
 import { db, auth } from "../../firebase";
 import { useSelectedStudent } from "../../context/SelectedStudentContext";
+
 /* ---------------- Donut Component ---------------- */
 
 const Donut = ({ data }) => {
@@ -72,19 +73,19 @@ const Dashboard = () => {
         }
 
         /* 🔹 Check if user is student */
-        const studentRef = doc(db, "students", user.uid);
+        let targetStudentId = selectedStudentUid || user.uid;
+
+        const studentRef = doc(db, "students", targetStudentId);
         const studentSnap = await getDoc(studentRef);
 
-        let targetStudentId = null;
         let instituteId = null;
 
         if (studentSnap.exists()) {
-          /* STUDENT LOGIN */
+          /* STUDENT / SIBLING LOGIN */
           setRole("student");
 
           const studentData = studentSnap.data();
           instituteId = studentData.instituteId;
-          targetStudentId = user.uid;
         } else {
           /* FAMILY LOGIN */
           setRole("family");
@@ -132,7 +133,7 @@ const Dashboard = () => {
           where("basicInfo.instituteId", "==", instituteId),
         );
 
-        const eventsSnap = await getDocs(collection(db, "events"));
+        const eventsSnap = await getDocs(eventsQuery);
 
         console.log("TOTAL EVENTS:", eventsSnap.docs.length);
 
@@ -145,7 +146,7 @@ const Dashboard = () => {
             ...doc.data(),
           }))
           .filter((event) => {
-            if (event.instituteId !== instituteId) return false;
+            if (event.basicInfo?.instituteId !== instituteId) return false;
 
             const endDate = event.schedule?.endDate;
             if (!endDate) return false;
@@ -163,53 +164,77 @@ const Dashboard = () => {
         console.log("Filtered Events:", upcomingEvents);
 
         setEvents(upcomingEvents); /* 🔹 Query performance data */
-
-        const q = query(
-          collection(db, `institutes/${instituteId}/performancestudents`),
-          where("studentId", "==", targetStudentId),
+        console.log("QUERY DEBUG:");
+        console.log("Institute:", instituteId);
+        console.log("Student:", selectedStudentUid || user.uid);
+        const docRef = doc(
+          db,
+          `institutes/${instituteId}/performancestudents/pkDvoFsJOGROkXx7ojLB`,
         );
 
-        const snap = await getDocs(q);
+        const snap = await getDoc(docRef);
 
-        if (snap.empty) {
+        if (!snap.exists()) {
+          console.log("No data ❌");
           setLoading(false);
           return;
         }
 
+        const docData = snap.data();
+
+        console.log("CORRECT DOC ✅", docData);
+
+        if (snap.empty) {
+          console.log("No documents found ❌");
+        } else {
+          console.log("Documents exist ✅");
+        }
+
         const attendanceResult = [];
-        let latestTraining = null;
-        let latestPhysical = null;
 
-        snap.docs.forEach((docSnap) => {
-          const docData = docSnap.data();
-
-          /* Attendance */
-          if (docData.attendanceStats) {
-            attendanceResult.push({
-              title: `${docData.subCategory} Sessions`,
-              total: docData.attendanceStats.total || 0,
-              present: docData.attendanceStats.present || 0,
-              absent:
-                (docData.attendanceStats.total || 0) -
-                (docData.attendanceStats.present || 0),
+        /* ✅ Attendance */
+        if (docData.categories) {
+          docData.categories.forEach((cat) => {
+            (cat.subCategories || []).forEach((sub) => {
+              if (sub.attendance) {
+                attendanceResult.push({
+                  title: cat.category || "Sessions",
+                  total: sub.attendance.totalClasses || 0,
+                  present: sub.attendance.presentClasses || 0,
+                  absent:
+                    (sub.attendance.totalClasses || 0) -
+                    (sub.attendance.presentClasses || 0),
+                });
+              }
             });
-          }
+          });
+        }
 
-          /* Training Metrics */
-          if (docData.metrics) {
-            latestTraining = docData.metrics;
-          }
+        /* ✅ Training */
+        let training = null;
+        let physical = null;
 
-          /* Physical Metrics */
-          if (docData.physicalFitness) {
-            latestPhysical = docData.physicalFitness;
-          }
-        });
+        if (docData.categories) {
+          docData.categories.forEach((cat) => {
+            (cat.subCategories || []).forEach((sub) => {
+              // ✅ CHECK HERE
+              if (sub.metrics) {
+                training = sub.metrics;
+              }
 
+              if (sub.physicalFitness) {
+                physical = sub.physicalFitness;
+              }
+            });
+          });
+        }
+        console.log("TRAINING ✅", training);
+        console.log("PHYSICAL ✅", physical);
+
+        /* ✅ SET STATE */
         setAttendanceData(attendanceResult);
-        setTrainingMetrics(latestTraining);
-        setPhysicalMetrics(latestPhysical);
-
+        setTrainingMetrics(training ? { ...training } : null);
+        setPhysicalMetrics(physical ? { ...physical } : null);
         setLoading(false);
       } catch (err) {
         console.error("Dashboard fetch error:", err);
@@ -238,7 +263,8 @@ const Dashboard = () => {
   };
 
   /* ---------------- UI ---------------- */
-
+  console.log("STATE TRAINING:", trainingMetrics);
+  console.log("STATE PHYSICAL:", physicalMetrics);
   return (
     <div className="bg-white min-h-screen p-4 sm:p-6 lg:p-8">
       {/* Top Cards */}
@@ -251,26 +277,6 @@ const Dashboard = () => {
           <div>
             <h3 className="font-semibold text-lg">Upcming Events</h3>
             <p className="text-gray-500 text-sm">{events.length} Events</p>
-          </div>
-        </div>
-
-        <div className="bg-white border border-orange-400 rounded-lg p-5 flex items-center gap-4">
-          <div className="bg-orange-100 p-3 rounded-md">
-            <Activity className="text-orange-500" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-lg">Active Sports</h3>
-            <p className="text-gray-500 text-sm">03 Sports</p>
-          </div>
-        </div>
-
-        <div className="bg-white border border-orange-400 rounded-lg p-5 flex items-center gap-4">
-          <div className="bg-orange-100 p-3 rounded-md">
-            <Clock className="text-orange-500" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-lg">Training Sessions</h3>
-            <p className="text-gray-500 text-sm">10 Sessions</p>
           </div>
         </div>
       </div>
@@ -317,27 +323,27 @@ const Dashboard = () => {
                 <Donut
                   data={[
                     {
-                      value: parseScore(trainingMetrics?.coach),
+                      value: parseScore(trainingMetrics?.coach || 0),
                       color: "#f97316",
                     },
                     {
-                      value: parseScore(trainingMetrics?.skill),
+                      value: parseScore(trainingMetrics?.skill || 0),
                       color: "#eab308",
                     },
                     {
-                      value: parseScore(trainingMetrics?.fitness),
+                      value: parseScore(trainingMetrics?.fitness || 0),
                       color: "#22c55e",
                     },
                     {
-                      value: parseScore(trainingMetrics?.discipline),
+                      value: parseScore(trainingMetrics?.discipline || 0),
                       color: "#6b7280",
                     },
                     {
-                      value: parseScore(trainingMetrics?.team),
+                      value: parseScore(trainingMetrics?.team || 0),
                       color: "#3b82f6",
                     },
                     {
-                      value: parseScore(trainingMetrics?.focus),
+                      value: parseScore(trainingMetrics?.focus || 0),
                       color: "#ef4444",
                     },
                   ]}
